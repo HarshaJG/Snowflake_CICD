@@ -13,22 +13,23 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Install SnowSQL
+      - name: Install SnowSQL via pip
         run: |
-          wget https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.31-linux_x86_64.bash
-          bash snowsql-1.2.31-linux_x86_64.bash -b
-          echo "$HOME/.snowsql/bin" >> $GITHUB_PATH
+          python -m pip install --upgrade pip
+          pip install snowflake-cli-labs
 
       - name: Run SQL Script
         env:
-          SNOWSQL_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
-          SNOWSQL_USER: ${{ secrets.SF_USERNAME }}
-          SNOWSQL_PWD: ${{ secrets.SF_PASSWORD }}
+          SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
-          snowsql -a $SNOWSQL_ACCOUNT \
-                   -u $SNOWSQL_USER \
-                   -r ${{ secrets.SF_ROLE }} \
-                   -w ${{ secrets.SF_WAREHOUSE }} \
-                   -d ${{ secrets.SF_DATABASE }} \
-                   -s PUBLIC \
-                   -f sql/script.sql
+          snow sql \
+            --account $SF_ACCOUNT \
+            --user $SF_USERNAME \
+            --password $SF_PASSWORD \
+            --role ${{ secrets.SF_ROLE }} \
+            --warehouse ${{ secrets.SF_WAREHOUSE }} \
+            --database ${{ secrets.SF_DATABASE }} \
+            --schema PUBLIC \
+            --file sql/script.sql
