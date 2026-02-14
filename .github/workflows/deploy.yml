@@ -29,6 +29,6 @@ jobs:
             -w ${{ secrets.SF_WAREHOUSE }} \
             -d ${{ secrets.SF_DATABASE }} \
             -s DEV \
-            -c CHANGE_HISTORY \
+            -c DELL.DEV.CHANGE_HISTORY
             -f migrations \
             --schemachange-create-change-history-table
