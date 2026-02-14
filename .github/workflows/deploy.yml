@@ -16,7 +16,8 @@ jobs:
       - name: Install SnowSQL
         run: |
           wget https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.31-linux_x86_64.bash
-          bash snowsql-1.2.31-linux_x86_64.bash
+          bash snowsql-1.2.31-linux_x86_64.bash -b
+          echo "$HOME/.snowsql/bin" >> $GITHUB_PATH
 
       - name: Run SQL Script
         env:
@@ -29,4 +30,5 @@ jobs:
                    -r ${{ secrets.SF_ROLE }} \
                    -w ${{ secrets.SF_WAREHOUSE }} \
                    -d ${{ secrets.SF_DATABASE }} \
+                   -s PUBLIC \
                    -f sql/script.sql
