@@ -19,11 +19,12 @@ jobs:
           pip install schemachange
 
       - name: Run Schema Changes
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
           schemachange deploy \
             -a ${{ secrets.SF_ACCOUNT }} \
             -u ${{ secrets.SF_USERNAME }} \
-            -p ${{ secrets.SF_PASSWORD }} \
             -r ${{ secrets.SF_ROLE }} \
             -w ${{ secrets.SF_WAREHOUSE }} \
             -d ${{ secrets.SF_DATABASE }} \
