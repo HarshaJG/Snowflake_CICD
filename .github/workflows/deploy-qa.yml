@@ -1,0 +1,24 @@
+name: Deploy to QA
+
+on:
+  push:
+    branches:
+      - qa
+      - develop
+
+jobs:
+  deploy-qa:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: 'QA'
+      schema: 'QA'
+      change_history_table: 'DELL.QA.CHANGE_HISTORY'
+      migrations_folder: 'migrations'
+      use_key_pair_auth: false  # Set to true to use key pair authentication
+    secrets:
+      SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
+      SF_USERNAME: ${{ secrets.SF_USERNAME }}
+      SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+      SF_ROLE: ${{ secrets.SF_ROLE }}
+      SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+      SF_DATABASE: ${{ secrets.SF_DATABASE }}

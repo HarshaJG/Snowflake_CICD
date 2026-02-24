@@ -1,0 +1,195 @@
+name: Reusable Snowflake Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (DEV, QA, PROD)'
+        required: true
+        type: string
+      schema:
+        description: 'Target schema name'
+        required: true
+        type: string
+      change_history_table:
+        description: 'Change history table name'
+        required: true
+        type: string
+      migrations_folder:
+        description: 'Folder containing migration scripts'
+        required: false
+        type: string
+        default: 'migrations'
+      runner:
+        description: 'GitHub runner to use'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      use_key_pair_auth:
+        description: 'Use key pair authentication instead of password'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SF_ACCOUNT:
+        required: true
+      SF_USERNAME:
+        required: true
+      SF_PASSWORD:
+        required: false
+      SF_PRIVATE_KEY:
+        required: false
+      SF_PRIVATE_KEY_PASSPHRASE:
+        required: false
+      SF_ROLE:
+        required: true
+      SF_WAREHOUSE:
+        required: true
+      SF_DATABASE:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install schemachange snowflake-connector-python cryptography
+
+      - name: Setup Private Key (if using key pair auth)
+        if: ${{ inputs.use_key_pair_auth }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SF_PRIVATE_KEY }}" > ~/.ssh/snowflake_key.pem
+          chmod 600 ~/.ssh/snowflake_key.pem
+
+      - name: Test Snowflake Connectivity
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SNOWFLAKE_PRIVATE_KEY_PATH: ${{ inputs.use_key_pair_auth && '~/.ssh/snowflake_key.pem' || '' }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SF_PRIVATE_KEY_PASSPHRASE }}
+        run: |
+          python - <<EOF
+          import snowflake.connector
+          import sys
+          import os
+          
+          print("🔍 Testing Snowflake connectivity...")
+          print(f"Account: ${{ secrets.SF_ACCOUNT }}")
+          print(f"Username: ${{ secrets.SF_USERNAME }}")
+          print(f"Database: ${{ secrets.SF_DATABASE }}")
+          print(f"Schema: ${{ inputs.schema }}")
+          print(f"Warehouse: ${{ secrets.SF_WAREHOUSE }}")
+          print(f"Authentication: {'Key Pair' if '${{ inputs.use_key_pair_auth }}' == 'true' else 'Password'}")
+          
+          try:
+              conn_params = {
+                  'account': '${{ secrets.SF_ACCOUNT }}',
+                  'user': '${{ secrets.SF_USERNAME }}',
+                  'role': '${{ secrets.SF_ROLE }}',
+                  'warehouse': '${{ secrets.SF_WAREHOUSE }}',
+                  'database': '${{ secrets.SF_DATABASE }}',
+                  'schema': '${{ inputs.schema }}'
+              }
+              
+              if '${{ inputs.use_key_pair_auth }}' == 'true':
+                  from cryptography.hazmat.backends import default_backend
+                  from cryptography.hazmat.primitives import serialization
+                  
+                  with open(os.path.expanduser('~/.ssh/snowflake_key.pem'), 'rb') as key_file:
+                      passphrase = os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE')
+                      private_key = serialization.load_pem_private_key(
+                          key_file.read(),
+                          password=passphrase.encode() if passphrase else None,
+                          backend=default_backend()
+                      )
+                  
+                  pkb = private_key.private_bytes(
+                      encoding=serialization.Encoding.DER,
+                      format=serialization.PrivateFormat.PKCS8,
+                      encryption_algorithm=serialization.NoEncryption()
+                  )
+                  conn_params['private_key'] = pkb
+              else:
+                  conn_params['password'] = os.getenv('SNOWFLAKE_PASSWORD')
+              
+              conn = snowflake.connector.connect(**conn_params)
+              cursor = conn.cursor()
+              
+              cursor.execute("SELECT CURRENT_VERSION(), CURRENT_ACCOUNT(), CURRENT_USER(), CURRENT_ROLE(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()")
+              result = cursor.fetchone()
+              
+              print("\n✅ Connection successful!")
+              print(f"Snowflake Version: {result[0]}")
+              print(f"Account: {result[1]}")
+              print(f"User: {result[2]}")
+              print(f"Role: {result[3]}")
+              print(f"Database: {result[4]}")
+              print(f"Schema: {result[5]}")
+              print(f"Warehouse: {result[6]}")
+              
+              cursor.close()
+              conn.close()
+              
+          except Exception as e:
+              print(f"\n❌ Connection failed: {str(e)}")
+              sys.exit(1)
+          EOF
+
+      - name: Run Schema Changes (Password Auth)
+        if: ${{ !inputs.use_key_pair_auth }}
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
+        run: |
+          schemachange deploy \
+            -a ${{ secrets.SF_ACCOUNT }} \
+            -u ${{ secrets.SF_USERNAME }} \
+            -r ${{ secrets.SF_ROLE }} \
+            -w ${{ secrets.SF_WAREHOUSE }} \
+            -d ${{ secrets.SF_DATABASE }} \
+            -s ${{ inputs.schema }} \
+            -c ${{ inputs.change_history_table }} \
+            -f ${{ inputs.migrations_folder }} \
+            --schemachange-create-change-history-table
+
+      - name: Run Schema Changes (Key Pair Auth)
+        if: ${{ inputs.use_key_pair_auth }}
+        env:
+          SNOWFLAKE_PRIVATE_KEY_PATH: ~/.ssh/snowflake_key.pem
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SF_PRIVATE_KEY_PASSPHRASE }}
+        run: |
+          schemachange deploy \
+            -a ${{ secrets.SF_ACCOUNT }} \
+            -u ${{ secrets.SF_USERNAME }} \
+            -r ${{ secrets.SF_ROLE }} \
+            -w ${{ secrets.SF_WAREHOUSE }} \
+            -d ${{ secrets.SF_DATABASE }} \
+            -s ${{ inputs.schema }} \
+            -c ${{ inputs.change_history_table }} \
+            -f ${{ inputs.migrations_folder }} \
+            --snowflake-private-key-path ~/.ssh/snowflake_key.pem \
+            --schemachange-create-change-history-table
+
+      - name: Cleanup Private Key
+        if: ${{ always() && inputs.use_key_pair_auth }}
+        run: |
+          rm -f ~/.ssh/snowflake_key.pem
+
+      - name: Deployment Summary
+        run: |
+          echo "✅ Deployment completed successfully"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Schema: ${{ inputs.schema }}"
+          echo "Database: ${{ secrets.SF_DATABASE }}"
+          echo "Authentication: ${{ inputs.use_key_pair_auth && 'Key Pair' || 'Password' }}"
