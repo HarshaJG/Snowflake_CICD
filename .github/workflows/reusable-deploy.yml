@@ -71,7 +71,9 @@ jobs:
         if: ${{ inputs.use_key_pair_auth }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SF_PRIVATE_KEY }}" > ~/.ssh/snowflake_key.pem
+          cat > ~/.ssh/snowflake_key.pem <<'PRIVATE_KEY_EOF'
+          ${{ secrets.SF_PRIVATE_KEY }}
+          PRIVATE_KEY_EOF
           chmod 600 ~/.ssh/snowflake_key.pem
 
       - name: Test Snowflake Connectivity
